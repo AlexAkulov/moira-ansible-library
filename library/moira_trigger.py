@@ -24,18 +24,28 @@ options:
     server_url:
         description:
             - Url of Moira API, with protocol (http or https)
-              C(url) is an aliaz for C(server_url).
+              C(url) is an alias for C(server_url).
         required: false
-        default: http://localhost:6060
+        default: http://localhost
         aliases: ["url"]
     state:
         description:
-            - Create or delete host group.
+            - Create or delete trigger.
         required: false
         default: "present"
         choices: [ "present", "absent" ]
     name:
+        description:
+            - Trigger name
+        required: true
+    target:
+        description:
+            - Target
+        required: false
+        default: ""
     targets:
+        description:
+            - Target lists
     warn:
     error:
     expression: 
@@ -63,7 +73,10 @@ import requests
 def moira_get_trigger(module):
     name = module.params['name']
     url = module.params['server_url'] + "/worker/trigger"
-    r = requests.get(url)
+    try:
+        r = requests.get(url)
+    except:
+        module.fail_json(msg="unable to connect moira api %s" % module.params['server_url'])
     if r.status_code != 200:
         module.fail_json(msg="unable to connect moira api %s" % module.params['server_url'])
     triggers = r.json()
@@ -77,52 +90,41 @@ def moira_delete_trigger(module, trigger):
         module.exit_json(msg="OK", changed=False)
     else:
         url = module.params['server_url'] + "/worker/trigger/" + trigger['id']
-        r = requests.delete(url)
+        try:
+            r = requests.delete(url)
+        except:
+            module.fail_json(msg="unable to connect moira api %s" % module.params['server_url'])
         if r.status_code != 200:
             module.fail_json(msg="failed delete trigger, status code %d" % r.status_code)
         module.exit_json(msg="OK", changed=True)
 
-
-def moira_need_update_trigger(trigger, new_trigger):
-    if trigger == None:
-        return True
-    for h in ['name', 'targets', 'warn_value', 'error_value', 'ttl', 'ttl_state', 'expression']:
-        if h not in trigger:
-            return True
-        if trigger[h] != new_trigger[h]:
-            return True
-    if len(trigger['tags']) != len(new_trigger['tags']):
-        return True
-    for t in new_trigger['tags']:
-        if t not in trigger['tags']:
-            return True
-    return False
-
-def moira_create_trigger(module, trigger, new_trigger):
-    if moira_need_update_trigger(trigger, new_trigger):
-        if trigger == None:
+def moira_create_trigger(module, old_trigger, new_trigger):
+    if old_trigger != new_trigger:
+        if old_trigger == None:
             trigger_id = ''
         else:
-            trigger_id = trigger['id']
+            trigger_id = old_trigger['id']
         url = module.params['server_url'] + "/worker/trigger/" + trigger_id
-        r = requests.put(url, data=json.dumps(new_trigger))
+        try:
+            r = requests.put(url, data=json.dumps(new_trigger))
+        except:
+            module.fail_json(msg="unable to connect moira api %s" % module.params['server_url'])
         if r.status_code != 200:
             module.fail_json(msg="unable to update trigger, status code %d" % r.status_code)
         module.exit_json(msg="OK", changed=True)
     else:
         module.exit_json(msg="OK", changed=False)
 
-
 def main():
     module = AnsibleModule(
         argument_spec = dict(
-            server_url  = dict(type='str', required=False, default='http://localhost'),
+            server_url  = dict(type='str',aliases=['url'], required=False, default='http://localhost'),
             name        = dict(type='str', required=True),
             target      = dict(type='str', required=False, default=''),
             targets     = dict(type='list', required=False, default=[]),
-            warn        = dict(type='int', required=False, default=None),
-            error       = dict(type='int', required=False, default=None),
-            expression  = dict(type='str', required=False, default=''),
+            warn        = dict(type='float', required=False, default=None),
+            error       = dict(type='float', required=False, default=None),
+            expression  = dict(type='str', required=False, default=None),
             ttl         = dict(type='int', required=False, default=600),
             state       = dict(type='str', required=False, default='present', choices=['present', 'absent']),
             ttl_state   = dict(type='str', required=False, default='NODATA', choises=['nodata', 'ok', 'warn', 'error', 'NODATA', 'OK', 'WARN', 'ERROR']),
@@ -131,28 +133,35 @@ def main():
     )
     
     state = module.params['state']
-    trigger = moira_get_trigger(module)
-    new_trigger = {}
-    new_trigger['name'] = module.params['name']
-    new_trigger['warn_value'] = module.params['warn']
-    new_trigger['error_value'] = module.params['error']
-    new_trigger['ttl'] = module.params['ttl']
-    new_trigger['ttl_state'] = module.params['ttl_state'].upper()
-    new_trigger['expression'] = module.params['expression']
-    new_trigger['tags'] = module.params['tags']
-    if module.params['target'] != '':
-        new_trigger['targets'] = [module.params['target']]
+    old_trigger = moira_get_trigger(module)
+    if old_trigger is not None:
+        new_trigger = old_trigger.copy()
     else:
-        new_trigger['targets'] = module.params['targets']
+        new_trigger = {}
 
     if state == "absent":
-        moira_delete_trigger(module, trigger)
+        moira_delete_trigger(module, old_trigger)
     else:
+        new_trigger['name'] = module.params['name']
+        new_trigger['warn_value'] = module.params['warn']
+        new_trigger['error_value'] = module.params['error']
+        new_trigger['ttl'] = module.params['ttl']
+        new_trigger['ttl_state'] = module.params['ttl_state'].upper()
+        new_trigger['expression'] = module.params['expression']
+        new_trigger['tags'] = module.params['tags']
+        if module.params['target'] != '':
+            new_trigger['targets'] = [module.params['target']]
+        else:
+            new_trigger['targets'] = module.params['targets']
         if len(new_trigger['targets']) == 0:
             module.fail_json(msg="'target' or 'targets' param required")
-        if new_trigger['warn_value'] == None or new_trigger['error_value'] == None:
-            module.fail_json(msg="warn and error required") 
-        moira_create_trigger(module, trigger, new_trigger)
+        if len(new_trigger['targets']) > 1:
+            if new_trigger['expression'] is None:
+                module.fail_json(msg="expression required") 
+        else:
+            if new_trigger['warn_value'] is None or new_trigger['error_value'] is None:
+                module.fail_json(msg="warn and error required") 
+        moira_create_trigger(module, old_trigger, new_trigger)
 
 from ansible.module_utils.basic import *
 from ansible.module_utils.urls import *
