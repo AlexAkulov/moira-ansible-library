@@ -1,0 +1,2 @@
+moira_api_url: http://localhost:4444
+moira_server: vm-edi-graph3

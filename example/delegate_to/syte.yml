@@ -1,0 +1,38 @@
+- hosts: servers
+  tasks:
+    - name: trigger Disk Utilization memory trigger must be created
+      moira_trigger: 
+        url: "{{ moira_api_url }}"
+        name: "Hight Disk Utilization"
+        target: "aliasByNode(movingAverage(DevOps.system.graph*.disk.sda.util_percentage, '30min'), 2)"
+        warn: 60.0
+        error: 90.0
+        tags: 
+          - DevOps
+          - Graphite
+      delegate_to: "{{ moira_server }}"
+
+    - name: trigger Hight Load Average for all servers must be created
+      moira_trigger:
+        url: "{{ moira_api_url }}"
+        name: "Hight Load Average"
+        target: "aliasByNode(DevOps.system.*.loadavg.load, 2)"
+        warn: 2.0
+        error: 4.0
+        tags:
+          - DevOps
+      delegate_to: "{{ moira_server }}"
+
+    - name: trigger Nginx slow must be created
+      moira_trigger:
+        url: "{{ moira_api_url }}"
+        name: "Nginx slow on {{ ansible_hostname }}"
+        targets: 
+          - "aliasByMetric(DevOps.nginx.{{ ansible_hostname }}.upstream_response_time.total.p95)"
+          - "aliasByMetric(DevOps.nginx.{{ ansible_hostname }}.upstream_response_time.total.p50)"
+        expression: "WARN if t1 > 1000 and t2 > 200 else OK"
+        tags:
+          - DevOps
+          - Front
+      delegate_to: "{{ moira_server }}"
+

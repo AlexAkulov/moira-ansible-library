@@ -72,7 +72,7 @@ import requests
 
 def moira_get_trigger(module):
     name = module.params['name']
-    url = module.params['server_url'] + "/worker/trigger"
+    url = module.params['server_url'] + "/api/trigger"
     try:
         r = requests.get(url)
     except:
@@ -89,7 +89,7 @@ def moira_delete_trigger(module, trigger):
     if trigger == None:
         module.exit_json(msg="OK", changed=False)
     else:
-        url = module.params['server_url'] + "/worker/trigger/" + trigger['id']
+        url = module.params['server_url'] + "/api/trigger/" + trigger['id']
         try:
             r = requests.delete(url)
         except:
@@ -104,7 +104,7 @@ def moira_create_trigger(module, old_trigger, new_trigger):
             trigger_id = ''
         else:
             trigger_id = old_trigger['id']
-        url = module.params['server_url'] + "/worker/trigger/" + trigger_id
+        url = module.params['server_url'] + "/api/trigger/" + trigger_id
         try:
             r = requests.put(url, data=json.dumps(new_trigger))
         except:
@@ -157,10 +157,11 @@ def main():
             module.fail_json(msg="'target' or 'targets' param required")
         if len(new_trigger['targets']) > 1:
             if new_trigger['expression'] is None:
-                module.fail_json(msg="expression required") 
+                module.fail_json(msg="use advanced mode, expression required")
         else:
-            if new_trigger['warn_value'] is None or new_trigger['error_value'] is None:
-                module.fail_json(msg="warn and error required") 
+            if new_trigger['expression'] is None:
+                if new_trigger['warn_value'] is None or new_trigger['error_value'] is None:
+                    module.fail_json(msg="warn and error or expression required") 
         moira_create_trigger(module, old_trigger, new_trigger)
 
 from ansible.module_utils.basic import *
